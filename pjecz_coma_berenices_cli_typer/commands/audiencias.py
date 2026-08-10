@@ -140,9 +140,83 @@ def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = 
     console = Console()
     console.print(f"Mostrando audiencias para la fecha: {fecha}")
 
+    # Consultar la base de datos para obtener las audiencias
+    Base.metadata.create_all(engine)
+    session = Session()
+    try:
+        audiencias = (
+            session.query(Audiencia)
+            .filter_by(fecha=fecha)
+            .order_by(Audiencia.hora_inicio)
+            .all()
+        )
+    finally:
+        session.close()
+
+    # Si no hay audiencias, mostrar un mensaje
+    if not audiencias:
+        console.print(f"[yellow]No se encontraron audiencias para la fecha: {fecha}[/yellow]")
+        return Exit(code=1)
+
+    # Mostrar las audiencias en una tabla
+    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
+    tabla.add_column("Fecha", style="cyan", no_wrap=True)
+    tabla.add_column("Hora Inicio", style="green")
+    tabla.add_column("Hora Fin", style="green")
+    tabla.add_column("Número de Expediente", style="magenta")
+    tabla.add_column("Sala", style="yellow")
+    tabla.add_column("Tipo de Audiencia", style="blue")
+    for audiencia in audiencias:
+        tabla.add_row(
+            audiencia.fecha,
+            audiencia.hora_inicio,
+            audiencia.hora_fin,
+            audiencia.numero_expediente,
+            audiencia.sala,
+            audiencia.tipo_audiencia,
+        )
+    console.print(tabla)
+
 
 @app.command()
-def vocear(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
-    """Vocear las audiencias en la terminal"""
+def vocear(
+    fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy,
+    hora_inicio: Annotated[str, Option(help="Hora de inicio en formato HH:MM")] = "",
+):
+    """Vocear las audiencias"""
     console = Console()
     console.print(f"Voceando audiencias para la fecha: {fecha}")
+
+    # Consultar la base de datos para obtener las audiencias
+    Base.metadata.create_all(engine)
+    session = Session()
+    try:
+        audiencias = session.query(Audiencia).filter_by(fecha=fecha)
+        if hora_inicio:
+            audiencias = audiencias.filter_by(hora_inicio=hora_inicio)
+        audiencias = audiencias.order_by(Audiencia.hora_inicio).all()
+    finally:
+        session.close()
+
+    # Si no hay audiencias, mostrar un mensaje
+    if not audiencias:
+        if hora_inicio:
+            console.print(f"[yellow]No se encontraron audiencias para la fecha: {fecha} y hora: {hora_inicio}[/yellow]")
+        else:
+            console.print(f"[yellow]No se encontraron audiencias para la fecha: {fecha}[/yellow]")
+        return Exit(code=1)
+
+    # Vocear la hora de inicio de la primera audiencia
+    primera_audiencia = audiencias[0]
+    console.print(f"[cyan]Vocear:[/cyan] Inicia la jornada de audiencias del día {fecha} a las {primera_audiencia.hora_inicio}")
+
+    # Vocear las audiencias
+    for audiencia in audiencias:
+        console.print("[green]Voceando audiencia:[/green]")
+        console.print(f"- [blue]Fecha:[/blue] {audiencia.fecha}")
+        console.print(f"- [blue]Hora inicio-fin:[/blue] {audiencia.hora_inicio} - {audiencia.hora_fin}")
+        console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
+        console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
+        console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
+        voceo = f"Inicia la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} en la {audiencia.sala}"
+        console.print(f"[cyan]Vocear:[/cyan] {voceo}")
