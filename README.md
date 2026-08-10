@@ -98,3 +98,29 @@ Ejecutar el CLI:
 ```bash
 cli --help
 ```
+
+Descargar las audiencias del día:
+
+```bash
+cli audiencias descargar
+```
+
+Se va a crear un archivo `audiencias.json` en el directorio raíz del proyecto con las audiencias descargadas.
+
+Mostrar las audiencias descargadas:
+
+```bash
+cli audiencias mostrar
+```
+
+Vocear las audiencias de una hora dada:
+
+```bash
+cli audiencias vocear --hora-inicio 09:00
+```
+
+Enviar al voceador las audiencias de una hora dada:
+
+```bash
+cli audiencias enviar-voceador --hora-inicio 09:00
+```
