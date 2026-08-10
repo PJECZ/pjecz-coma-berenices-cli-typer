@@ -9,15 +9,21 @@ import requests
 from pytz import timezone
 from rich.console import Console
 from rich.table import Table
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from typer import Exit, Option, Typer
 
 from pjecz_coma_berenices_cli_typer.config.settings import get_settings
+from pjecz_coma_berenices_cli_typer.models.audiencias import Audiencia, Base
 
 app = Typer(name="audiencias", help="Comando para vocear audiencias")
 
 settings = get_settings()
 local_tz = timezone(settings.TZ)
 fecha_hoy = datetime.now(tz=local_tz).strftime("%Y-%m-%d")
+
+engine = create_engine("sqlite:///audiencias.sqlite3")
+Session = sessionmaker(bind=engine)
 
 
 @app.command()
@@ -71,7 +77,7 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
     for audiencia in contenido["audiencias"]:
         try:
             fecha = audiencia.get("fecha")[:10]
-        except AttributeError, ValueError:
+        except (AttributeError, ValueError):
             fecha = ""
         audiencias.append(
             {
@@ -102,6 +108,30 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
             audiencia["tipo_audiencia"],
         )
     console.print(tabla)
+
+    # Persistir las audiencias en la base de datos
+    Base.metadata.create_all(engine)
+    session = Session()
+    try:
+        for audiencia in audiencias:
+            existente = (
+                session.query(Audiencia)
+                .filter_by(
+                    fecha=audiencia["fecha"],
+                    hora_inicio=audiencia["hora_inicio"],
+                    sala=audiencia["sala"],
+                )
+                .first()
+            )
+            if existente:
+                existente.hora_fin = audiencia["hora_fin"]
+                existente.numero_expediente = audiencia["numero_expediente"]
+                existente.tipo_audiencia = audiencia["tipo_audiencia"]
+            else:
+                session.add(Audiencia(**audiencia))
+        session.commit()
+    finally:
+        session.close()
 
 
 @app.command()
