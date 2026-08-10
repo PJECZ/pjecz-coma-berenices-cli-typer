@@ -8,7 +8,8 @@ from typing import Annotated
 import requests
 from pytz import timezone
 from rich.console import Console
-from typer import Option, Typer
+from rich.table import Table
+from typer import Exit, Option, Typer
 
 from pjecz_coma_berenices_cli_typer.config.settings import get_settings
 
@@ -33,45 +34,27 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
             timeout=60,
         )
     except requests.exceptions.ConnectionError as error:
-        return {
-            "success": False,
-            "message": f"Error de conexión: {error}",
-            "data": [],
-        }
+        console.print(f"[yellow]Error de conexión:[/yellow] {error}")
+        return Exit(code=1)
     if respuesta.status_code != 200:
-        return {
-            "success": False,
-            "message": f"Error al consultar: Código de estado {respuesta.status_code}",
-            "data": [],
-        }
+        console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
+        return Exit(code=1)
 
     # Validar la respuesta de la API
     try:
         contenido = respuesta.json()
     except ValueError:
-        return {
-            "success": False,
-            "message": "Respuesta inesperada: No se pudo decodificar el JSON",
-            "data": [],
-        }
+        console.print("[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON")
+        return Exit(code=1)
     if "success" not in contenido:
-        return {
-            "success": False,
-            "message": "Respuesta inesperada",
-            "data": [],
-        }
+        console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
+        return Exit(code=1)
     if contenido["success"] is False:
-        return {
-            "success": False,
-            "message": contenido["message"],
-            "data": [],
-        }
+        console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
+        return Exit(code=1)
     if "audiencias" not in contenido:
-        return {
-            "success": False,
-            "message": "Respuesta inesperada: No se encontraron audiencias",
-            "data": [],
-        }
+        console.print("[yellow]Respuesta inesperada:[/yellow] No se encontraron audiencias")
+        return Exit(code=1)
 
     # Inicializar listado de audiencias
     audiencias = []
@@ -92,6 +75,25 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
                 "tipo_audiencia": audiencia.get("tipoAudiencia"),
             }
         )
+
+    # Crear una tabla para mostrar las audiencias
+    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
+    tabla.add_column("Fecha", style="cyan", no_wrap=True)
+    tabla.add_column("Hora Inicio", style="green")
+    tabla.add_column("Hora Fin", style="green")
+    tabla.add_column("Número de Expediente", style="magenta")
+    tabla.add_column("Sala", style="yellow")
+    tabla.add_column("Tipo de Audiencia", style="blue")
+    for audiencia in audiencias:
+        tabla.add_row(
+            audiencia["fecha"],
+            audiencia["hora_inicio"],
+            audiencia["hora_fin"],
+            audiencia["numero_expediente"],
+            audiencia["sala"],
+            audiencia["tipo_audiencia"],
+        )
+    console.print(tabla)
 
 
 @app.command()
