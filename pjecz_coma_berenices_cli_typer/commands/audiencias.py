@@ -213,9 +213,45 @@ def vocear(
             console.print(f"[yellow]No se encontraron audiencias para la fecha: {fecha}[/yellow]")
         return Exit(code=1)
 
+    # Inicializar el ID que requiere el servicio de voceo
+    voceador_id = 1000
+
     # Vocear la hora de inicio de la primera audiencia
     primera_audiencia = audiencias[0]
-    console.print(f"[cyan]Vocear:[/cyan] Inicia la jornada de audiencias de las {primera_audiencia.hora_inicio}")
+    mensaje_inicial = f"Inicia la jornada de audiencias de las {primera_audiencia.hora_inicio}"
+    console.print(f"[cyan]Voceando:[/cyan] {mensaje_inicial}")
+
+    # Enviar al servicio de voceo
+    payload = {
+        "id": voceador_id,
+        "mensaje": mensaje_inicial,
+        "tiempo": datetime.now(tz=local_tz).isoformat(),
+        "ttl_segundos": 60,
+    }
+    try:
+        respuesta = requests.post(settings.VOCEADOR_URL, json=payload)
+    except requests.exceptions.ConnectionError as error:
+        console.print(f"[yellow]Error de conexión al servicio de voceo:[/yellow] {error}")
+        return Exit(code=1)
+    if respuesta.status_code != 200:
+        console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
+        return Exit(code=1)
+
+    # Validar la respuesta del servicio de voceo
+    try:
+        contenido = respuesta.json()
+    except ValueError:
+        console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
+        return Exit(code=1)
+    if "success" not in contenido:
+        console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
+        return Exit(code=1)
+    if contenido["success"] is False:
+        console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
+        return Exit(code=1)
+
+    # Incrementar el ID para la siguiente audiencia
+    voceador_id += 1
 
     # Vocear las audiencias
     for audiencia in audiencias:
@@ -225,5 +261,37 @@ def vocear(
         console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
         console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
         console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-        voceo = f"Inicia la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} en la {audiencia.sala}"
+        voceo = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
         console.print(f"[cyan]Vocear:[/cyan] {voceo}")
+
+        # Enviar al servicio de voceo
+        payload = {
+            "id": voceador_id,
+            "mensaje": voceo,
+            "tiempo": datetime.now(tz=local_tz).isoformat(),
+            "ttl_segundos": 60,
+        }
+        try:
+            respuesta = requests.post(settings.VOCEADOR_URL, json=payload)
+        except requests.exceptions.ConnectionError as error:
+            console.print(f"[yellow]Error de conexión al servicio de voceo:[/yellow] {error}")
+            return Exit(code=1)
+        if respuesta.status_code != 200:
+            console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
+            return Exit(code=1)
+
+        # Validar la respuesta del servicio de voceo
+        try:
+            contenido = respuesta.json()
+        except ValueError:
+            console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
+            return Exit(code=1)
+        if "success" not in contenido:
+            console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
+            return Exit(code=1)
+        if contenido["success"] is False:
+            console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
+            return Exit(code=1)
+
+        # Incrementar el ID para la siguiente audiencia
+        voceador_id += 1
