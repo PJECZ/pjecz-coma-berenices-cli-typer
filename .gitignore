@@ -210,4 +210,4 @@ __marimo__/
 .bashrc
 
 # SQLite database files
-*.sqlite
+*.sqlite3
