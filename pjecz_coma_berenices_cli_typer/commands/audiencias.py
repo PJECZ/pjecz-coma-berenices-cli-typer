@@ -28,11 +28,19 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
 
     # Consultar la API para obtener las audiencias
     try:
-        respuesta = requests.get(
-            url=settings.AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL,
-            headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
-            timeout=60,
-        )
+        if fecha == fecha_hoy:
+            respuesta = requests.get(
+                url=settings.AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL,
+                headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
+                timeout=60,
+            )
+        else:
+            respuesta = requests.get(
+                url=settings.AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL,
+                headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
+                timeout=60,
+                params={"fecha": fecha}
+            )
     except requests.exceptions.ConnectionError as error:
         console.print(f"[yellow]Error de conexión:[/yellow] {error}")
         return Exit(code=1)
