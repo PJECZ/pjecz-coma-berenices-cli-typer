@@ -1,6 +1,6 @@
 # SPEC 01 — Base de datos SQLite para audiencias
 
-> **Status:** Draft
+> **Status:** Aprobado
 > **Depends on:** None
 > **Date:** 2026-08-10
 > **Objective:** Crear una base de datos SQLite con SQLAlchemy para persistir las audiencias descargadas, incluyendo un contador de voceos inicializado en cero.
