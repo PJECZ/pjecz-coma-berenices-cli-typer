@@ -30,7 +30,7 @@ Session = sessionmaker(bind=engine)
 def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
     """Descargar las audiencias"""
     console = Console()
-    console.print(f"Descargando audiencias para la fecha: {fecha}")
+    console.print(f"[green]Descargando audiencias para la fecha:[/green] {fecha}")
 
     # Consultar la API para obtener las audiencias
     try:
@@ -138,7 +138,7 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
 def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
     """Mostrar las audiencias en la terminal"""
     console = Console()
-    console.print(f"Mostrando audiencias para la fecha: {fecha}")
+    console.print(f"[green]Mostrando audiencias para la fecha:[/green] {fecha}")
 
     # Consultar la base de datos para obtener las audiencias
     Base.metadata.create_all(engine)
@@ -185,7 +185,14 @@ def vocear(
 ):
     """Vocear las audiencias"""
     console = Console()
-    console.print(f"Voceando audiencias para la fecha: {fecha}")
+    console.print(f"[green]Voceando audiencias para la fecha:[/green] {fecha}")
+
+    # Si hora_inicio no es proporcionada, determinar la hora_inicio a partir del tiempo del sistema hacia atrás en bloques de 15 miniutos
+    if not hora_inicio:
+        ahora = datetime.now(tz=local_tz)
+        minuto = (ahora.minute // 15) * 15
+        hora_inicio = ahora.replace(minute=minuto, second=0, microsecond=0).strftime("%H:%M")
+        console.print(f"[green]Se usará la hora de inicio más cercana hacia atrás:[/green] {hora_inicio}")
 
     # Consultar la base de datos para obtener las audiencias
     Base.metadata.create_all(engine)
@@ -208,7 +215,7 @@ def vocear(
 
     # Vocear la hora de inicio de la primera audiencia
     primera_audiencia = audiencias[0]
-    console.print(f"[cyan]Vocear:[/cyan] Inicia la jornada de audiencias del día {fecha} a las {primera_audiencia.hora_inicio}")
+    console.print(f"[cyan]Vocear:[/cyan] Inicia la jornada de audiencias de las {primera_audiencia.hora_inicio}")
 
     # Vocear las audiencias
     for audiencia in audiencias:
