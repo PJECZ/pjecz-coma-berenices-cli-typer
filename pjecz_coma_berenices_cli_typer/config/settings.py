@@ -10,8 +10,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Settings"""
 
-    SAJI_API_KEY: str = ""
-    SAJI_API_BUSCAR_AGENDA_URL: str = ""
+    AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL: str = ""
+    AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL: str = ""
+    AGENDAMIENTO_AUDIENCIAS_API_KEY: str = ""
     TZ: str = "America/Mexico_City"
     VOCEADOR_URL: str = ""
     VOCEADOR_VOZ: int = 1

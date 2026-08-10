@@ -60,9 +60,9 @@ if [ -f .env ]
 then
     export $(grep -v '^#' .env | xargs)
     echo "-- Variables de entorno"
-    echo "-- Variables de entorno"
-    echo "   SAJI_API_BUSCAR_AGENDA_URL: ${SAJI_API_BUSCAR_AGENDA_URL}"
-    echo "   SAJI_API_KEY: ${SAJI_API_KEY}"
+    echo "   AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL: ${AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL}"
+    echo "   AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL: ${AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL}"
+    echo "   AGENDAMIENTO_AUDIENCIAS_API_KEY: ${AGENDAMIENTO_AUDIENCIAS_API_KEY}"
     echo "   TZ: ${TZ}"
     echo "   VOCEADOR_URL: ${VOCEADOR_URL}"
     echo "   VOCEADOR_VOZ: ${VOCEADOR_VOZ}"

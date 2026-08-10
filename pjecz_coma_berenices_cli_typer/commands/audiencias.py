@@ -29,8 +29,8 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
     # Consultar la API para obtener las audiencias
     try:
         respuesta = requests.get(
-            url=settings.SAJI_API_BUSCAR_AGENDA_URL,
-            headers={"X-Api-Key": settings.SAJI_API_KEY},
+            url=settings.AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL,
+            headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
             timeout=60,
         )
     except requests.exceptions.ConnectionError as error:
@@ -44,7 +44,7 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
     try:
         contenido = respuesta.json()
     except ValueError:
-        console.print("[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON")
+        console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
         return Exit(code=1)
     if "success" not in contenido:
         console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
