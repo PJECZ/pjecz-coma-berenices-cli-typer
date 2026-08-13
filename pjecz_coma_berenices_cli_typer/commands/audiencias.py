@@ -2,7 +2,7 @@
 Command audiencias
 """
 
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Annotated
 
 import requests
@@ -26,10 +26,8 @@ engine = create_engine("sqlite:///audiencias.sqlite3")
 Session = sessionmaker(bind=engine)
 
 
-@app.command()
-def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
-    """Descargar las audiencias"""
-    console = Console()
+def _descargar(fecha: str, console: Console) -> list[dict]:
+    """Descargar las audiencias de la API y persistirlas en la base de datos"""
     console.print(f"[green]Descargando audiencias para la fecha:[/green] {fecha}")
 
     # Consultar la API para obtener las audiencias
@@ -45,30 +43,30 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
                 url=settings.AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL,
                 headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
                 timeout=60,
-                params={"fecha": fecha}
+                params={"fecha": fecha},
             )
     except requests.exceptions.ConnectionError as error:
         console.print(f"[yellow]Error de conexión:[/yellow] {error}")
-        return Exit(code=1)
+        raise Exit(code=1) from error
     if respuesta.status_code != 200:
         console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
-        return Exit(code=1)
+        raise Exit(code=1)
 
     # Validar la respuesta de la API
     try:
         contenido = respuesta.json()
     except ValueError:
         console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
-        return Exit(code=1)
+        raise Exit(code=1)
     if "success" not in contenido:
         console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
-        return Exit(code=1)
+        raise Exit(code=1)
     if contenido["success"] is False:
         console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
-        return Exit(code=1)
+        raise Exit(code=1)
     if "audiencias" not in contenido:
         console.print("[yellow]Respuesta inesperada:[/yellow] No se encontraron audiencias")
-        return Exit(code=1)
+        raise Exit(code=1)
 
     # Inicializar listado de audiencias
     audiencias = []
@@ -76,12 +74,12 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
     # Alimentar el listado
     for audiencia in contenido["audiencias"]:
         try:
-            fecha = audiencia.get("fecha")[:10]
+            fecha_audiencia = audiencia.get("fecha")[:10]
         except (AttributeError, ValueError):
-            fecha = ""
+            fecha_audiencia = ""
         audiencias.append(
             {
-                "fecha": fecha,
+                "fecha": fecha_audiencia,
                 "hora_inicio": audiencia.get("horaInicio"),
                 "hora_fin": audiencia.get("horaFin"),
                 "numero_expediente": audiencia.get("numeroExpediente"),
@@ -132,6 +130,18 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
         session.commit()
     finally:
         session.close()
+
+    return audiencias
+
+
+@app.command()
+def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
+    """Descargar las audiencias"""
+    console = Console()
+    try:
+        _descargar(fecha, console)
+    except Exit:
+        pass
 
 
 @app.command()
