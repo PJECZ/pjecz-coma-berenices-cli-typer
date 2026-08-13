@@ -1,6 +1,6 @@
 # SPEC 02 — Comando mantener_ejecutando para voceo periódico
 
-> **Status:** Approved
+> **Status:** Implemented
 > **Depends on:** SPEC 01
 > **Date:** 2026-08-10
 > **Objective:** Agregar el comando `mantener_ejecutando` en `commands/audiencias.py` que descargue las audiencias del día, se active entre la primera y la última hora de inicio del día, revise cada `n` minutos y vocee las audiencias cuya hora de inicio coincida con la hora actual, evitando duplicados mediante la columna `voceos`.
