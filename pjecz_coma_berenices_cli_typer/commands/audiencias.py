@@ -2,7 +2,8 @@
 Command audiencias
 """
 
-from datetime import date, datetime, time
+import time
+from datetime import datetime
 from typing import Annotated
 
 import requests
@@ -142,6 +143,154 @@ def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] 
         _descargar(fecha, console)
     except Exit:
         pass
+
+
+def _enviar_mensaje_voceador(mensaje: str, voceador_id: int, console: Console) -> None:
+    """Enviar un mensaje al servicio de voceo"""
+    payload = {
+        "id": voceador_id,
+        "mensaje": mensaje,
+        "tiempo": datetime.now(tz=local_tz).isoformat(),
+        "ttl_segundos": 60,
+    }
+    try:
+        respuesta = requests.post(settings.VOCEADOR_URL, json=payload)
+    except requests.exceptions.ConnectionError as error:
+        console.print(f"[yellow]Error de conexión al servicio de voceo:[/yellow] {error}")
+        raise Exit(code=1) from error
+    if respuesta.status_code != 200:
+        console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
+        raise Exit(code=1)
+
+    # Validar la respuesta del servicio de voceo
+    try:
+        contenido = respuesta.json()
+    except ValueError:
+        console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
+        raise Exit(code=1)
+    if "success" not in contenido:
+        console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
+        raise Exit(code=1)
+    if contenido["success"] is False:
+        console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
+        raise Exit(code=1)
+
+
+@app.command()
+def mantener_ejecutando(
+    minutos: Annotated[int, Option(help="Intervalo en minutos entre revisiones")] = 5,
+):
+    """Mantener ejecutando el voceo de audiencias"""
+    console = Console()
+
+    # Validar que el intervalo sea positivo
+    if minutos <= 0:
+        console.print("[yellow]Error:[/yellow] El intervalo de minutos debe ser mayor a cero")
+        raise Exit(code=1)
+
+    # Descargar las audiencias del día de hoy
+    try:
+        _descargar(fecha_hoy, console)
+    except Exit as error:
+        raise error
+
+    # Consultar la base de datos para obtener las audiencias de hoy
+    Base.metadata.create_all(engine)
+    session = Session()
+    try:
+        audiencias_hoy = (
+            session.query(Audiencia)
+            .filter_by(fecha=fecha_hoy)
+            .order_by(Audiencia.hora_inicio)
+            .all()
+        )
+    finally:
+        session.close()
+
+    # Si no hay audiencias, mostrar un mensaje y salir
+    if not audiencias_hoy:
+        console.print(f"[yellow]No se encontraron audiencias para la fecha: {fecha_hoy}[/yellow]")
+        raise Exit(code=1)
+
+    # Calcular la hora de inicio mínima y máxima del día
+    hora_inicio_minima_str = audiencias_hoy[0].hora_inicio
+    hora_inicio_maxima_str = audiencias_hoy[-1].hora_inicio
+    hora_inicio_minima = datetime.strptime(hora_inicio_minima_str, "%H:%M").time()
+    hora_inicio_maxima = datetime.strptime(hora_inicio_maxima_str, "%H:%M").time()
+
+    # Comparar horas actuales truncando segundos y microsegundos
+    ahora = datetime.now(tz=local_tz)
+    hora_actual_truncada = ahora.replace(second=0, microsecond=0).time()
+
+    # Si la hora actual es posterior a la máxima, no hay nada que hacer
+    if hora_actual_truncada > hora_inicio_maxima:
+        console.print("[yellow]No hay nada que hacer, la última hora de inicio ya pasó.[/yellow]")
+        raise Exit(code=0)
+
+    # Si la hora actual es anterior a la mínima, esperar hasta esa hora
+    if hora_actual_truncada < hora_inicio_minima:
+        hora_inicio_minima_dt = local_tz.localize(datetime.combine(ahora.date(), hora_inicio_minima))
+        segundos_hasta_inicio = (hora_inicio_minima_dt - ahora).total_seconds()
+        if segundos_hasta_inicio > 0:
+            console.print(f"[green]Esperando hasta la primera hora de inicio:[/green] {hora_inicio_minima_str}")
+            time.sleep(segundos_hasta_inicio)
+
+    # Bucle de revisiones
+    while True:
+        ahora = datetime.now(tz=local_tz)
+        hora_actual_str = ahora.strftime("%H:%M")
+        hora_actual_truncada = ahora.replace(second=0, microsecond=0).time()
+
+        # Terminar si la hora actual supera la última hora de inicio
+        if hora_actual_truncada > hora_inicio_maxima:
+            console.print("[green]Terminó la jornada de audiencias.[/green]")
+            break
+
+        # Consultar audiencias de esta hora que aún no se hayan voceado
+        session = Session()
+        try:
+            coincidencias = (
+                session.query(Audiencia)
+                .filter_by(fecha=fecha_hoy, hora_inicio=hora_actual_str)
+                .filter(Audiencia.voceos < 1)
+                .order_by(Audiencia.hora_inicio)
+                .all()
+            )
+        finally:
+            session.close()
+
+        if coincidencias:
+            # Vocear el mensaje inicial
+            mensaje_inicial = f"Inicia la jornada de audiencias de las {hora_actual_str}"
+            console.print(f"[cyan]Voceando:[/cyan] {mensaje_inicial}")
+            _enviar_mensaje_voceador(mensaje_inicial, 1000, console)
+
+            # Vocear cada audiencia encontrada
+            voceador_id = 1001
+            for audiencia in coincidencias:
+                console.print("[green]Voceando audiencia:[/green]")
+                console.print(f"- [blue]Fecha:[/blue] {audiencia.fecha}")
+                console.print(f"- [blue]Hora inicio-fin:[/blue] {audiencia.hora_inicio} - {audiencia.hora_fin}")
+                console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
+                console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
+                console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
+                voceo = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+                console.print(f"[cyan]Vocear:[/cyan] {voceo}")
+                _enviar_mensaje_voceador(voceo, voceador_id, console)
+
+                # Incrementar el contador de voceos
+                session_actualizar = Session()
+                try:
+                    audiencia_actualizada = session_actualizar.query(Audiencia).filter_by(id=audiencia.id).first()
+                    if audiencia_actualizada:
+                        audiencia_actualizada.voceos += 1
+                        session_actualizar.commit()
+                finally:
+                    session_actualizar.close()
+                voceador_id += 1
+
+        # Dormir hasta la siguiente revisión
+        time.sleep(minutos * 60)
 
 
 @app.command()
