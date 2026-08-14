@@ -10,9 +10,11 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Settings"""
 
+    AGENDAMIENTO_AUDIENCIAS_API_KEY: str = ""
     AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL: str = ""
     AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL: str = ""
-    AGENDAMIENTO_AUDIENCIAS_API_KEY: str = ""
+    AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL: str = ""
+    AGENDAMIENTO_AUDIENCIAS_TIMEOUT: int = 60
     TZ: str = "America/Mexico_City"
     VOCEADOR_URL: str = ""
     VOCEADOR_VOZ: int = 1

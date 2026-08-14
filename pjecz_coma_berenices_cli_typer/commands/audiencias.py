@@ -2,6 +2,7 @@
 Command audiencias
 """
 
+import re
 import time
 from datetime import datetime
 from typing import Annotated
@@ -17,6 +18,54 @@ from typer import Exit, Option, Typer
 from pjecz_coma_berenices_cli_typer.config.settings import get_settings
 from pjecz_coma_berenices_cli_typer.models.audiencias import Audiencia, Base
 
+CATALOGO_IDS_AUTORIDADES = {
+    1: {
+        "clave": "SLT-J1-MER",
+        "descripcion": "Juzgado Primero de Primera instancia en Materia Mercantil del Distrito Judicial de Saltillo",
+        "id+materia": 5,
+    },
+    2: {
+        "clave": "SLT-J2-MER",
+        "descripcion": "Juzgado Segundo de Primera instancia en Materia Mercantil del Distrito Judicial de Saltillo",
+        "id+materia": 5,
+    },
+    3: {
+        "clave": "SLT-TL",
+        "descripcion": "Tribunal Laboral del Distrito Judicial de Saltillo",
+        "id+materia": 1,
+    },
+    4: {
+        "clave": "SLT-J3-MER",
+        "descripcion": "Juzgado Tercero de Primera instancia en Materia Mercantil del Distrito Judicial de Saltillo",
+        "id+materia": 5,
+    },
+    5: {
+        "clave": "SLT-J1L-CIV",
+        "descripcion": "Juzgado Primero Letrado de Primera instancia en Materia Civil del Distrito Judicial de Saltillo",
+        "id+materia": 6,
+    },
+    6: {
+        "clave": "SLT-J2L-CIV",
+        "descripcion": "Juzgado Segundo Letrado de Primera instancia en Materia Civil del Distrito Judicial de Saltillo",
+        "id+materia": 6,
+    },
+    7: {
+        "clave": "SLT-JU-MER",
+        "descripcion": "Juzgado Único de Primera instancia en Materia Mercantil del Distrito Judicial de Saltillo",
+        "id+materia": 5,
+    },
+}
+
+CATALOGO_IDS_MATERIAS = {
+    1: "Laboral",
+    2: "Familiar Tradiccional",
+    3: "Familiar Oral",
+    4: "Civil",
+    5: "Mercantil",
+    6: "Letrado",
+    7: "Penal",
+}
+
 app = Typer(name="audiencias", help="Comando para vocear audiencias")
 
 settings = get_settings()
@@ -27,120 +76,164 @@ engine = create_engine("sqlite:///audiencias.sqlite3")
 Session = sessionmaker(bind=engine)
 
 
-def _descargar(fecha: str, console: Console) -> list[dict]:
+def _descargar(fecha: str, id_autoridad: int, id_materia: int, console: Console) -> None:
     """Descargar las audiencias de la API y persistirlas en la base de datos"""
     console.print(f"[green]Descargando audiencias para la fecha:[/green] {fecha}")
 
-    # Consultar la API para obtener las audiencias
+    # Validar que AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL esté definido
+    if settings.AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL == "":
+        console.print("[red]Falta la variable de entorno AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL[/red]")
+        raise Exit(code=1)
+
+    # Validar que fecha sea YYYY-MM-DD
+    if bool(re.match(r'^\d{4}-\d{2}-\d{2}$', fecha)) is False:
+        console.print("[red]Fecha NO válida[/red]")
+        raise Exit(code=1)
+
+    # Definir payload para AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL
+    payload = {
+        "idAutoridad": id_autoridad,
+        "idMateria": id_materia,
+        "fecha": fecha,
+    }
+
+    # Consultar la API
     try:
-        if fecha == fecha_hoy:
-            respuesta = requests.get(
-                url=settings.AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL,
-                headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
-                timeout=60,
-            )
-        else:
-            respuesta = requests.get(
-                url=settings.AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL,
-                headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
-                timeout=60,
-                params={"fecha": fecha},
-            )
+        respuesta = requests.post(
+            url=settings.AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL,
+            headers={"X-Api-Key": settings.AGENDAMIENTO_AUDIENCIAS_API_KEY},
+            timeout=settings.AGENDAMIENTO_AUDIENCIAS_TIMEOUT,
+            json=payload,
+        )
     except requests.exceptions.ConnectionError as error:
-        console.print(f"[yellow]Error de conexión:[/yellow] {error}")
+        console.print(f"[red]Error de conexión:[/red] {error}")
         raise Exit(code=1) from error
     if respuesta.status_code != 200:
-        console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
+        console.print(f"[red]Error de conexión:[/red] {respuesta.status_code} {respuesta.reason}")
         raise Exit(code=1)
 
     # Validar la respuesta de la API
     try:
         contenido = respuesta.json()
     except ValueError:
-        console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
+        console.print(f"[red]Respuesta inesperada:[/red] No se pudo decodificar el JSON: {respuesta.content}")
         raise Exit(code=1)
     if "success" not in contenido:
-        console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
+        console.print("[red]Respuesta inesperada:[/red] La respuesta no contiene el campo 'success'")
         raise Exit(code=1)
     if contenido["success"] is False:
-        console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
+        console.print(f"[red]Respuesta inesperada:[/red] Success es falso. {contenido.get('message')}")
         raise Exit(code=1)
     if "audiencias" not in contenido:
-        console.print("[yellow]Respuesta inesperada:[/yellow] No se encontraron audiencias")
+        console.print("[red]Respuesta inesperada:[/red] No se encontraron audiencias")
         raise Exit(code=1)
 
-    # Inicializar listado de audiencias
-    audiencias = []
+    # Ejemplo de audiencia
+    #
+    # "numeroExpediente": "263/2026-JLM1",
+    # "sala": "Sala 1",
+    # "tipoAudiencia": "Audiencia de alegatos",
+    # "horaInicio": "09:00",
+    # "horaFin": "10:00",
+    # "juez": "LUIS ARGENIS LUNA CRUZ",
+    # "secretario": "MANUELA LEIJA MENDOZA",
+    # "autoridad": "Juzgado Único de Primera instancia en Materia Mercantil del Distrito Judicial de Saltillo",
+    # "materia": "Mercantil",
+    # "fecha": "2026-08-12T09:00:00"
 
     # Alimentar el listado
-    for audiencia in contenido["audiencias"]:
+    listado = []
+    for item in contenido["audiencias"]:
         try:
-            fecha_audiencia = audiencia.get("fecha")[:10]
+            fecha_audiencia = item.get("fecha")[:10]
         except (AttributeError, ValueError):
             fecha_audiencia = ""
-        audiencias.append(
+        try:
+            numero_sala = int(item.get("sala").split(" ")[1])
+        except (AttributeError, ValueError):
+            numero_sala = 0
+        listado.append(
             {
                 "fecha": fecha_audiencia,
-                "hora_inicio": audiencia.get("horaInicio"),
-                "hora_fin": audiencia.get("horaFin"),
-                "numero_expediente": audiencia.get("numeroExpediente"),
-                "sala": audiencia.get("sala"),
-                "tipo_audiencia": audiencia.get("tipoAudiencia"),
+                "hora_inicio": item.get("horaInicio"),
+                "hora_fin": item.get("horaFin"),
+                "materia": item.get("materia"),
+                "autoridad": item.get("autoridad"),
+                "numero_expediente": item.get("numeroExpediente"),
+                "sala": item.get("sala"),
+                "numero_sala": numero_sala,
+                "tipo_audiencia": item.get("tipoAudiencia"),
             }
         )
 
-    # Crear una tabla para mostrar las audiencias
-    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
-    tabla.add_column("Fecha", style="cyan", no_wrap=True)
-    tabla.add_column("Hora Inicio", style="green")
-    tabla.add_column("Hora Fin", style="green")
-    tabla.add_column("Número de Expediente", style="magenta")
-    tabla.add_column("Sala", style="yellow")
-    tabla.add_column("Tipo de Audiencia", style="blue")
-    for audiencia in audiencias:
-        tabla.add_row(
-            audiencia["fecha"],
-            audiencia["hora_inicio"],
-            audiencia["hora_fin"],
-            audiencia["numero_expediente"],
-            audiencia["sala"],
-            audiencia["tipo_audiencia"],
-        )
-    console.print(tabla)
-
     # Persistir las audiencias en la base de datos
+    actualizados_contador = 0
+    insertados_contador = 0
+    sin_cambios_contador = 0
     Base.metadata.create_all(engine)
     session = Session()
     try:
-        for audiencia in audiencias:
+        for item in listado:
+            fue_actualizado = False
+            fue_insertado = False
+            # Si hubiera una actualizacion por retraso, se debe de encontrar por fecha, materia, autoridad y numero_expediente
             existente = (
                 session.query(Audiencia)
                 .filter_by(
-                    fecha=audiencia["fecha"],
-                    hora_inicio=audiencia["hora_inicio"],
-                    sala=audiencia["sala"],
+                    fecha=item["fecha"],
+                    materia=item["materia"],
+                    autoridad=item["autoridad"],
+                    numero_expediente=item["numero_expediente"],
                 )
                 .first()
             )
+            # Al encontrar coincidencia, se actualiza la hora_inicio, hora_fin, sala y tipo_audiencia
             if existente:
-                existente.hora_fin = audiencia["hora_fin"]
-                existente.numero_expediente = audiencia["numero_expediente"]
-                existente.tipo_audiencia = audiencia["tipo_audiencia"]
+                if existente.hora_inicio != item["hora_inicio"]:
+                    existente.hora_inicio = item["hora_inicio"]
+                    fue_actualizado = True
+                if existente.hora_fin != item["hora_fin"]:
+                    existente.hora_fin = item["hora_fin"]
+                    fue_actualizado = True
+                if existente.sala != item["sala"]:
+                    existente.sala = item["sala"]
+                    try:
+                        existente.numero_sala = int(item.get("sala").strip(" ")[1])
+                    except (AttributeError, ValueError):
+                        existente.numero_sala = 0
+                    fue_actualizado = True
+                if existente.tipo_audiencia != item["tipo_audiencia"]:
+                    existente.tipo_audiencia = item["tipo_audiencia"]
+                    fue_actualizado = True
+                if fue_actualizado:
+                    actualizados_contador += 1
             else:
-                session.add(Audiencia(**audiencia))
+                session.add(Audiencia(**item))
+                fue_insertado = True
+                insertados_contador += 1
+            if fue_actualizado is False and fue_insertado is False:
+                sin_cambios_contador += 1
         session.commit()
     finally:
         session.close()
 
-    return audiencias
+    # Mostrar contadores
+    if actualizados_contador > 1:
+        console.print(f"[yellow]- Se actualizaron:[/yellow] {fue_actualizado}")
+    if insertados_contador > 1:
+        console.print(f"[green]- Se insertaron:[/green] {insertados_contador}")
+    if sin_cambios_contador > 1:
+        console.print(f"[cyan]- Sin cambios:[/cyan] {insertados_contador}")
 
 
 @app.command()
 def descargar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
     """Descargar las audiencias"""
+    id_autoridad = 0  # Todas las autoridades
+    id_materia = 0  # Todas las materias
     console = Console()
     try:
-        _descargar(fecha, console)
+        _descargar(fecha, id_autoridad, id_materia, console)
     except Exit:
         pass
 
@@ -156,23 +249,23 @@ def _enviar_mensaje_voceador(mensaje: str, voceador_id: int, console: Console) -
     try:
         respuesta = requests.post(settings.VOCEADOR_URL, json=payload)
     except requests.exceptions.ConnectionError as error:
-        console.print(f"[yellow]Error de conexión al servicio de voceo:[/yellow] {error}")
+        console.print(f"[red]Error de conexión al servicio de voceo:[/red] {error}")
         raise Exit(code=1) from error
     if respuesta.status_code != 200:
-        console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
+        console.print(f"[red]Error de conexión:[/red] {respuesta.status_code} {respuesta.reason}")
         raise Exit(code=1)
 
     # Validar la respuesta del servicio de voceo
     try:
         contenido = respuesta.json()
     except ValueError:
-        console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
+        console.print(f"[red]Respuesta inesperada:[/red] No se pudo decodificar el JSON: {respuesta.content}")
         raise Exit(code=1)
     if "success" not in contenido:
-        console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
+        console.print("[red]Respuesta inesperada:[/red] La respuesta no contiene el campo 'success'")
         raise Exit(code=1)
     if contenido["success"] is False:
-        console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
+        console.print(f"[red]Respuesta inesperada:[/red] Success es falso. {contenido.get('message')}")
         raise Exit(code=1)
 
 
@@ -185,19 +278,23 @@ def mantener_ejecutando(
 
     # Validar que el intervalo sea positivo
     if minutos <= 0:
-        console.print("[yellow]Error:[/yellow] El intervalo de minutos debe ser mayor a cero")
+        console.print("[red]Error:[/red] El intervalo de minutos debe ser mayor a cero")
         raise Exit(code=1)
 
     # Validar que el intervalo sea 5, 10, 15 o 30
     if minutos not in (5, 10, 15, 30):
-        console.print("[yellow]Error:[/yellow] El intervalo de minutos debe ser 5, 10, 15 o 30")
+        console.print("[red]Error:[/red] El intervalo de minutos debe ser 5, 10, 15 o 30")
         raise Exit(code=1)
 
     # Descargar las audiencias del día de hoy
+    id_autoridad = 0  # Todas las autoridades
+    id_materia = 0  # Todas las materias
+    console = Console()
     try:
-        _descargar(fecha_hoy, console)
-    except Exit as error:
-        raise error
+        _descargar(fecha_hoy, id_autoridad, id_materia, console)
+    except Exit:
+        console.print("[red]Error:[/red] Falló la descarga de las audiencias de hoy")
+        raise Exit(code=1)
 
     # Consultar la base de datos para obtener las audiencias de hoy
     Base.metadata.create_all(engine)
@@ -206,7 +303,7 @@ def mantener_ejecutando(
         audiencias_hoy = (
             session.query(Audiencia)
             .filter_by(fecha=fecha_hoy)
-            .order_by(Audiencia.hora_inicio)
+            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
             .all()
         )
     finally:
@@ -257,14 +354,14 @@ def mantener_ejecutando(
             console.print("[green]Terminó la jornada de audiencias.[/green]")
             break
 
-        # Consultar audiencias de esta hora que aún no se hayan voceado
+        # Consultar audiencias de esta hora que aún NO se hayan voceado
         session = Session()
         try:
             coincidencias = (
                 session.query(Audiencia)
                 .filter_by(fecha=fecha_hoy, hora_inicio=hora_actual_str)
                 .filter(Audiencia.voceos < 1)
-                .order_by(Audiencia.hora_inicio)
+                .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
                 .all()
             )
         finally:
@@ -280,14 +377,13 @@ def mantener_ejecutando(
             voceador_id = 1001
             for audiencia in coincidencias:
                 console.print("[green]Voceando audiencia:[/green]")
-                console.print(f"- [blue]Fecha:[/blue] {audiencia.fecha}")
-                console.print(f"- [blue]Hora inicio-fin:[/blue] {audiencia.hora_inicio} - {audiencia.hora_fin}")
+                console.print(f"- [blue]Materia:[/blue] {audiencia.materia}")
                 console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
                 console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
                 console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-                voceo = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
-                console.print(f"[cyan]Vocear:[/cyan] {voceo}")
-                _enviar_mensaje_voceador(voceo, voceador_id, console)
+                mensaje = f"Para la {audiencia.tipo_audiencia} en materia {audiencia.materia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+                console.print(f"[cyan]Vocear:[/cyan] {mensaje}")
+                _enviar_mensaje_voceador(mensaje, voceador_id, console)
 
                 # Incrementar el contador de voceos
                 session_actualizar = Session()
@@ -306,6 +402,30 @@ def mantener_ejecutando(
         siguiente_incremento_minutos = max(siguiente_incremento_minutos, minutos)
 
 
+def _mostrar(fecha: str, audiencias: list[Audiencia], console: Console):
+    """Mostrar las audiencias en una tabla"""
+    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
+    tabla.add_column("Fecha", style="cyan", no_wrap=True)
+    tabla.add_column("Hora Inicio", style="green")
+    tabla.add_column("Hora Fin", style="green")
+    tabla.add_column("Tipo de Audiencia", style="blue")
+    tabla.add_column("Materia", style="magenta")
+    # tabla.add_column("Autoridad", style="magenta")
+    tabla.add_column("Número de Expediente", style="magenta")
+    tabla.add_column("Sala", style="yellow")
+    for audiencia in audiencias:
+        tabla.add_row(
+            audiencia.fecha,
+            audiencia.hora_inicio,
+            audiencia.hora_fin,
+            audiencia.tipo_audiencia,
+            audiencia.materia,
+            # audiencia.autoridad,
+            audiencia.numero_expediente,
+            audiencia.sala,
+        )
+    console.print(tabla)
+
 @app.command()
 def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
     """Mostrar las audiencias en la terminal"""
@@ -319,7 +439,7 @@ def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = 
         audiencias = (
             session.query(Audiencia)
             .filter_by(fecha=fecha)
-            .order_by(Audiencia.hora_inicio)
+            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
             .all()
         )
     finally:
@@ -331,24 +451,7 @@ def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = 
         return Exit(code=1)
 
     # Mostrar las audiencias en una tabla
-    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
-    tabla.add_column("Fecha", style="cyan", no_wrap=True)
-    tabla.add_column("Hora Inicio", style="green")
-    tabla.add_column("Hora Fin", style="green")
-    tabla.add_column("Número de Expediente", style="magenta")
-    tabla.add_column("Sala", style="yellow")
-    tabla.add_column("Tipo de Audiencia", style="blue")
-    for audiencia in audiencias:
-        tabla.add_row(
-            audiencia.fecha,
-            audiencia.hora_inicio,
-            audiencia.hora_fin,
-            audiencia.numero_expediente,
-            audiencia.sala,
-            audiencia.tipo_audiencia,
-        )
-    console.print(tabla)
-
+    _mostrar(fecha, audiencias, console)
 
 @app.command()
 def vocear(
@@ -370,10 +473,13 @@ def vocear(
     Base.metadata.create_all(engine)
     session = Session()
     try:
-        audiencias = session.query(Audiencia).filter_by(fecha=fecha)
-        if hora_inicio:
-            audiencias = audiencias.filter_by(hora_inicio=hora_inicio)
-        audiencias = audiencias.order_by(Audiencia.hora_inicio).all()
+        audiencias = (
+            session.query(Audiencia)
+            .filter_by(fecha=fecha)
+            .filter_by(hora_inicio=hora_inicio)
+            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
+            .all()
+        )  # Ordenado por materia, sala
     finally:
         session.close()
 
@@ -392,78 +498,25 @@ def vocear(
     primera_audiencia = audiencias[0]
     mensaje_inicial = f"Inicia la jornada de audiencias de las {primera_audiencia.hora_inicio}"
     console.print(f"[cyan]Voceando:[/cyan] {mensaje_inicial}")
-
-    # Enviar al servicio de voceo
-    payload = {
-        "id": voceador_id,
-        "mensaje": mensaje_inicial,
-        "tiempo": datetime.now(tz=local_tz).isoformat(),
-        "ttl_segundos": 60,
-    }
-    try:
-        respuesta = requests.post(settings.VOCEADOR_URL, json=payload)
-    except requests.exceptions.ConnectionError as error:
-        console.print(f"[yellow]Error de conexión al servicio de voceo:[/yellow] {error}")
-        return Exit(code=1)
-    if respuesta.status_code != 200:
-        console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
-        return Exit(code=1)
-
-    # Validar la respuesta del servicio de voceo
-    try:
-        contenido = respuesta.json()
-    except ValueError:
-        console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
-        return Exit(code=1)
-    if "success" not in contenido:
-        console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
-        return Exit(code=1)
-    if contenido["success"] is False:
-        console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
-        return Exit(code=1)
+    _enviar_mensaje_voceador(mensaje_inicial, voceador_id, console)
 
     # Incrementar el ID para la siguiente audiencia
     voceador_id += 1
 
     # Vocear las audiencias
+    materia_actual = ""
     for audiencia in audiencias:
+        if materia_actual == "" or materia_actual != audiencia.materia:
+            materia_actual = audiencia.materia
+
         console.print("[green]Voceando audiencia:[/green]")
-        console.print(f"- [blue]Fecha:[/blue] {audiencia.fecha}")
-        console.print(f"- [blue]Hora inicio-fin:[/blue] {audiencia.hora_inicio} - {audiencia.hora_fin}")
+        console.print(f"- [blue]Materia:[/blue] {audiencia.materia}")
         console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
         console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
         console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-        voceo = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
-        console.print(f"[cyan]Vocear:[/cyan] {voceo}")
-
-        # Enviar al servicio de voceo
-        payload = {
-            "id": voceador_id,
-            "mensaje": voceo,
-            "tiempo": datetime.now(tz=local_tz).isoformat(),
-            "ttl_segundos": 60,
-        }
-        try:
-            respuesta = requests.post(settings.VOCEADOR_URL, json=payload)
-        except requests.exceptions.ConnectionError as error:
-            console.print(f"[yellow]Error de conexión al servicio de voceo:[/yellow] {error}")
-            return Exit(code=1)
-        if respuesta.status_code != 200:
-            console.print(f"[yellow]Error de conexión:[/yellow] {respuesta.status_code} {respuesta.reason}")
-            return Exit(code=1)
-
-        # Validar la respuesta del servicio de voceo
-        try:
-            contenido = respuesta.json()
-        except ValueError:
-            console.print(f"[yellow]Respuesta inesperada:[/yellow] No se pudo decodificar el JSON: {respuesta.content}")
-            return Exit(code=1)
-        if "success" not in contenido:
-            console.print("[yellow]Respuesta inesperada:[/yellow] La respuesta no contiene el campo 'success'")
-            return Exit(code=1)
-        if contenido["success"] is False:
-            console.print(f"[yellow]Error:[/yellow] {contenido['message']}")
-            return Exit(code=1)
+        mensaje = f"Para la {audiencia.tipo_audiencia} en materia {audiencia.materia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+        console.print(f"[cyan]Vocear:[/cyan] {mensaje}")
+        _enviar_mensaje_voceador(mensaje, voceador_id, console)
 
         # Incrementar el ID para la siguiente audiencia
         voceador_id += 1
