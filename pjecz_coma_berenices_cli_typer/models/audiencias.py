@@ -21,6 +21,7 @@ class Audiencia(Base):
     fecha: Mapped[str] = mapped_column(String)
     hora_inicio: Mapped[str] = mapped_column(String)
     hora_fin: Mapped[str] = mapped_column(String)
+    materia: Mapped[str] = mapped_column(String)
     numero_expediente: Mapped[str] = mapped_column(String)
     sala: Mapped[str] = mapped_column(String)
     tipo_audiencia: Mapped[str] = mapped_column(String)
