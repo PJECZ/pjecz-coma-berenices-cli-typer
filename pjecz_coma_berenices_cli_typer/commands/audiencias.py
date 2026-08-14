@@ -178,7 +178,7 @@ def _enviar_mensaje_voceador(mensaje: str, voceador_id: int, console: Console) -
 
 @app.command()
 def mantener_ejecutando(
-    minutos: Annotated[int, Option(help="Intervalo en minutos entre revisiones")] = 5,
+    minutos: Annotated[int, Option(help="Intervalo en minutos (5, 10, 15 o 30) entre revisiones")] = 5,
 ):
     """Mantener ejecutando el voceo de audiencias"""
     console = Console()
@@ -186,6 +186,11 @@ def mantener_ejecutando(
     # Validar que el intervalo sea positivo
     if minutos <= 0:
         console.print("[yellow]Error:[/yellow] El intervalo de minutos debe ser mayor a cero")
+        raise Exit(code=1)
+
+    # Validar que el intervalo sea 5, 10, 15 o 30
+    if minutos not in (5, 10, 15, 30):
+        console.print("[yellow]Error:[/yellow] El intervalo de minutos debe ser 5, 10, 15 o 30")
         raise Exit(code=1)
 
     # Descargar las audiencias del día de hoy
@@ -218,9 +223,15 @@ def mantener_ejecutando(
     hora_inicio_minima = datetime.strptime(hora_inicio_minima_str, "%H:%M").time()
     hora_inicio_maxima = datetime.strptime(hora_inicio_maxima_str, "%H:%M").time()
 
-    # Comparar horas actuales truncando segundos y microsegundos
+    # Definir la hora truncada
     ahora = datetime.now(tz=local_tz)
-    hora_actual_truncada = ahora.replace(second=0, microsecond=0).time()
+    minuto_truncado = (ahora.minute // minutos) * minutos
+    hora_actual_truncada = ahora.replace(minute=minuto_truncado , second=0, microsecond=0).time()
+
+    # Definir el siguiente incremento
+    siguiente_incremento_minutos = ahora.minute % minutos
+    if siguiente_incremento_minutos == 0:
+        siguiente_incremento_minutos = minutos - (ahora.minute % minutos)
 
     # Si la hora actual es posterior a la máxima, no hay nada que hacer
     if hora_actual_truncada > hora_inicio_maxima:
@@ -290,7 +301,9 @@ def mantener_ejecutando(
                 voceador_id += 1
 
         # Dormir hasta la siguiente revisión
-        time.sleep(minutos * 60)
+        console.print(f"[green]Bloque[/green] [white]{hora_actual_str}[/white], [green]esperando {siguiente_incremento_minutos} minutos...[/green]")
+        time.sleep(siguiente_incremento_minutos * 60)
+        siguiente_incremento_minutos = max(siguiente_incremento_minutos, minutos)
 
 
 @app.command()
