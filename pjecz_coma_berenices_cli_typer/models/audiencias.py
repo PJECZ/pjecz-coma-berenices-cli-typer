@@ -22,8 +22,10 @@ class Audiencia(Base):
     hora_inicio: Mapped[str] = mapped_column(String)
     hora_fin: Mapped[str] = mapped_column(String)
     materia: Mapped[str] = mapped_column(String)
+    autoridad: Mapped[str] = mapped_column(String)
     numero_expediente: Mapped[str] = mapped_column(String)
     sala: Mapped[str] = mapped_column(String)
+    numero_sala: Mapped[int] = mapped_column(Integer)  # Se separa para poder ordenar
     tipo_audiencia: Mapped[str] = mapped_column(String)
     voceos: Mapped[int] = mapped_column(Integer, default=0)
 

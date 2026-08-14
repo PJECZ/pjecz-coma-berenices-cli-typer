@@ -76,7 +76,7 @@ engine = create_engine("sqlite:///audiencias.sqlite3")
 Session = sessionmaker(bind=engine)
 
 
-def _descargar(fecha: str, id_autoridad: int, id_materia: int, console: Console) -> list[dict]:
+def _descargar(fecha: str, id_autoridad: int, id_materia: int, console: Console) -> None:
     """Descargar las audiencias de la API y persistirlas en la base de datos"""
     console.print(f"[green]Descargando audiencias para la fecha:[/green] {fecha}")
 
@@ -128,9 +128,6 @@ def _descargar(fecha: str, id_autoridad: int, id_materia: int, console: Console)
         console.print("[red]Respuesta inesperada:[/red] No se encontraron audiencias")
         raise Exit(code=1)
 
-    # Inicializar listado de audiencias
-    audiencias = []
-
     # Ejemplo de audiencia
     #
     # "numeroExpediente": "263/2026-JLM1",
@@ -145,76 +142,88 @@ def _descargar(fecha: str, id_autoridad: int, id_materia: int, console: Console)
     # "fecha": "2026-08-12T09:00:00"
 
     # Alimentar el listado
-    for audiencia in contenido["audiencias"]:
+    listado = []
+    for item in contenido["audiencias"]:
         try:
-            fecha_audiencia = audiencia.get("fecha")[:10]
+            fecha_audiencia = item.get("fecha")[:10]
         except (AttributeError, ValueError):
             fecha_audiencia = ""
-        audiencias.append(
+        try:
+            numero_sala = int(item.get("sala").split(" ")[1])
+        except (AttributeError, ValueError):
+            numero_sala = 0
+        listado.append(
             {
                 "fecha": fecha_audiencia,
-                "hora_inicio": audiencia.get("horaInicio"),
-                "hora_fin": audiencia.get("horaFin"),
-                "materia": audiencia.get("materia"),
-                "autoridad": audiencia.get("autoridad"),
-                "numero_expediente": audiencia.get("numeroExpediente"),
-                "sala": audiencia.get("sala"),
-                "tipo_audiencia": audiencia.get("tipoAudiencia"),
+                "hora_inicio": item.get("horaInicio"),
+                "hora_fin": item.get("horaFin"),
+                "materia": item.get("materia"),
+                "autoridad": item.get("autoridad"),
+                "numero_expediente": item.get("numeroExpediente"),
+                "sala": item.get("sala"),
+                "numero_sala": numero_sala,
+                "tipo_audiencia": item.get("tipoAudiencia"),
             }
         )
 
-    # Crear una tabla para mostrar las audiencias
-    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
-    tabla.add_column("Fecha", style="cyan", no_wrap=True)
-    tabla.add_column("Hora Inicio", style="green")
-    tabla.add_column("Hora Fin", style="green")
-    tabla.add_column("Materia", style="magenta")
-    tabla.add_column("Autoridad", style="magenta")
-    tabla.add_column("Número de Expediente", style="magenta")
-    tabla.add_column("Sala", style="yellow")
-    tabla.add_column("Tipo de Audiencia", style="blue")
-    for audiencia in audiencias:
-        tabla.add_row(
-            audiencia["fecha"],
-            audiencia["hora_inicio"],
-            audiencia["hora_fin"],
-            audiencia["materia"],
-            audiencia["autoridad"],
-            audiencia["numero_expediente"],
-            audiencia["sala"],
-            audiencia["tipo_audiencia"],
-        )
-    console.print(tabla)
-
     # Persistir las audiencias en la base de datos
+    actualizados_contador = 0
+    insertados_contador = 0
+    sin_cambios_contador = 0
     Base.metadata.create_all(engine)
     session = Session()
     try:
-        for audiencia in audiencias:
-            # Si hubiera una actualizacion por retraso, no deberia cambiar la fecha, materia, autoridad y numero_expediente
+        for item in listado:
+            fue_actualizado = False
+            fue_insertado = False
+            # Si hubiera una actualizacion por retraso, se debe de encontrar por fecha, materia, autoridad y numero_expediente
             existente = (
                 session.query(Audiencia)
                 .filter_by(
-                    fecha=audiencia["fecha"],
-                    materia=audiencia["materia"],
-                    autoridad=audiencia["autoridad"],
-                    numero_expediente=audiencia["numero_expediente"],
+                    fecha=item["fecha"],
+                    materia=item["materia"],
+                    autoridad=item["autoridad"],
+                    numero_expediente=item["numero_expediente"],
                 )
                 .first()
             )
             # Al encontrar coincidencia, se actualiza la hora_inicio, hora_fin, sala y tipo_audiencia
             if existente:
-                existente.hora_inicio = audiencia["hora_inicio"]
-                existente.hora_fin = audiencia["hora_fin"]
-                existente.sala = audiencia["sala"]
-                existente.tipo_audiencia = audiencia["tipo_audiencia"]
+                if existente.hora_inicio != item["hora_inicio"]:
+                    existente.hora_inicio = item["hora_inicio"]
+                    fue_actualizado = True
+                if existente.hora_fin != item["hora_fin"]:
+                    existente.hora_fin = item["hora_fin"]
+                    fue_actualizado = True
+                if existente.sala != item["sala"]:
+                    existente.sala = item["sala"]
+                    try:
+                        existente.numero_sala = int(item.get("sala").strip(" ")[1])
+                    except (AttributeError, ValueError):
+                        existente.numero_sala = 0
+                    fue_actualizado = True
+                if existente.tipo_audiencia != item["tipo_audiencia"]:
+                    existente.tipo_audiencia = item["tipo_audiencia"]
+                    fue_actualizado = True
+                if fue_actualizado:
+                    actualizados_contador += 1
             else:
-                session.add(Audiencia(**audiencia))
+                session.add(Audiencia(**item))
+                fue_insertado = True
+                insertados_contador += 1
+            if fue_actualizado is False and fue_insertado is False:
+                sin_cambios_contador += 1
         session.commit()
     finally:
         session.close()
 
-    return audiencias
+    # Mostrar contadores
+    if actualizados_contador > 1:
+        console.print(f"[yellow]- Se actualizaron:[/yellow] {fue_actualizado}")
+    if insertados_contador > 1:
+        console.print(f"[green]- Se insertaron:[/green] {insertados_contador}")
+    if sin_cambios_contador > 1:
+        console.print(f"[cyan]- Sin cambios:[/cyan] {insertados_contador}")
 
 
 @app.command()
@@ -294,8 +303,7 @@ def mantener_ejecutando(
         audiencias_hoy = (
             session.query(Audiencia)
             .filter_by(fecha=fecha_hoy)
-            .order_by(Audiencia.hora_inicio)
-            .order_by(Audiencia.materia, Audiencia.sala)
+            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
             .all()
         )
     finally:
@@ -346,14 +354,14 @@ def mantener_ejecutando(
             console.print("[green]Terminó la jornada de audiencias.[/green]")
             break
 
-        # Consultar audiencias de esta hora que aún no se hayan voceado
+        # Consultar audiencias de esta hora que aún NO se hayan voceado
         session = Session()
         try:
             coincidencias = (
                 session.query(Audiencia)
                 .filter_by(fecha=fecha_hoy, hora_inicio=hora_actual_str)
                 .filter(Audiencia.voceos < 1)
-                .order_by(Audiencia.hora_inicio)
+                .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
                 .all()
             )
         finally:
@@ -369,14 +377,13 @@ def mantener_ejecutando(
             voceador_id = 1001
             for audiencia in coincidencias:
                 console.print("[green]Voceando audiencia:[/green]")
-                console.print(f"- [blue]Fecha:[/blue] {audiencia.fecha}")
-                console.print(f"- [blue]Hora inicio-fin:[/blue] {audiencia.hora_inicio} - {audiencia.hora_fin}")
+                console.print(f"- [blue]Materia:[/blue] {audiencia.materia}")
                 console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
                 console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
                 console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-                voceo = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
-                console.print(f"[cyan]Vocear:[/cyan] {voceo}")
-                _enviar_mensaje_voceador(voceo, voceador_id, console)
+                mensaje = f"Para la {audiencia.tipo_audiencia} en materia {audiencia.materia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+                console.print(f"[cyan]Vocear:[/cyan] {mensaje}")
+                _enviar_mensaje_voceador(mensaje, voceador_id, console)
 
                 # Incrementar el contador de voceos
                 session_actualizar = Session()
@@ -395,6 +402,30 @@ def mantener_ejecutando(
         siguiente_incremento_minutos = max(siguiente_incremento_minutos, minutos)
 
 
+def _mostrar(fecha: str, audiencias: list[Audiencia], console: Console):
+    """Mostrar las audiencias en una tabla"""
+    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
+    tabla.add_column("Fecha", style="cyan", no_wrap=True)
+    tabla.add_column("Hora Inicio", style="green")
+    tabla.add_column("Hora Fin", style="green")
+    tabla.add_column("Tipo de Audiencia", style="blue")
+    tabla.add_column("Materia", style="magenta")
+    # tabla.add_column("Autoridad", style="magenta")
+    tabla.add_column("Número de Expediente", style="magenta")
+    tabla.add_column("Sala", style="yellow")
+    for audiencia in audiencias:
+        tabla.add_row(
+            audiencia.fecha,
+            audiencia.hora_inicio,
+            audiencia.hora_fin,
+            audiencia.tipo_audiencia,
+            audiencia.materia,
+            # audiencia.autoridad,
+            audiencia.numero_expediente,
+            audiencia.sala,
+        )
+    console.print(tabla)
+
 @app.command()
 def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = fecha_hoy):
     """Mostrar las audiencias en la terminal"""
@@ -408,7 +439,7 @@ def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = 
         audiencias = (
             session.query(Audiencia)
             .filter_by(fecha=fecha)
-            .order_by(Audiencia.hora_inicio)
+            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
             .all()
         )
     finally:
@@ -420,24 +451,7 @@ def mostrar(fecha: Annotated[str, Option(help="Fecha en formato YYYY-MM-DD")] = 
         return Exit(code=1)
 
     # Mostrar las audiencias en una tabla
-    tabla = Table(title=f"Audiencias para la fecha: {fecha}")
-    tabla.add_column("Fecha", style="cyan", no_wrap=True)
-    tabla.add_column("Hora Inicio", style="green")
-    tabla.add_column("Hora Fin", style="green")
-    tabla.add_column("Número de Expediente", style="magenta")
-    tabla.add_column("Sala", style="yellow")
-    tabla.add_column("Tipo de Audiencia", style="blue")
-    for audiencia in audiencias:
-        tabla.add_row(
-            audiencia.fecha,
-            audiencia.hora_inicio,
-            audiencia.hora_fin,
-            audiencia.numero_expediente,
-            audiencia.sala,
-            audiencia.tipo_audiencia,
-        )
-    console.print(tabla)
-
+    _mostrar(fecha, audiencias, console)
 
 @app.command()
 def vocear(
@@ -463,7 +477,7 @@ def vocear(
             session.query(Audiencia)
             .filter_by(fecha=fecha)
             .filter_by(hora_inicio=hora_inicio)
-            .order_by(Audiencia.materia, Audiencia.sala)
+            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
             .all()
         )  # Ordenado por materia, sala
     finally:
@@ -496,13 +510,11 @@ def vocear(
             materia_actual = audiencia.materia
 
         console.print("[green]Voceando audiencia:[/green]")
-        console.print(f"- [blue]Fecha:[/blue] {audiencia.fecha}")
-        console.print(f"- [blue]Hora inicio-fin:[/blue] {audiencia.hora_inicio} - {audiencia.hora_fin}")
         console.print(f"- [blue]Materia:[/blue] {audiencia.materia}")
         console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
         console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
         console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-        mensaje = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+        mensaje = f"Para la {audiencia.tipo_audiencia} en materia {audiencia.materia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
         console.print(f"[cyan]Vocear:[/cyan] {mensaje}")
         _enviar_mensaje_voceador(mensaje, voceador_id, console)
 
