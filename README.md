@@ -5,10 +5,10 @@ Interfaz de Linea de Comandos (CLI) para vocear audiencias.
 ## Objetivos
 
 - Obtener los datos de las audiencias desde las APIs de los sistemas de gestión de información.
-- A partir de los tiempos de inicio de las audiencias, generar un plan de voceo diario.
+- Con los datos de las audiencias creará una base de datos SQLite.
+- Probar el voceo de las audiencias en un tiempo especificado.
 - Ejecutar el voceo de las audiencias en el tiempo programado.
-- Marcar como voceadas las audiencias que ya fueron voceadas.
-- Reportar el estado de las audiencias voceadas.
+- Incrementar el contador de voceos de las audiencias cuendo sean voceadas.
 
 ## Instalación
 
@@ -60,9 +60,11 @@ if [ -f .env ]
 then
     export $(grep -v '^#' .env | xargs)
     echo "-- Variables de entorno"
+    echo "   AGENDAMIENTO_AUDIENCIAS_API_KEY: ${AGENDAMIENTO_AUDIENCIAS_API_KEY}"
     echo "   AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL: ${AGENDAMIENTO_AUDIENCIAS_FECHA_API_URL}"
     echo "   AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL: ${AGENDAMIENTO_AUDIENCIAS_PANTALLA_API_URL}"
-    echo "   AGENDAMIENTO_AUDIENCIAS_API_KEY: ${AGENDAMIENTO_AUDIENCIAS_API_KEY}"
+    echo "   AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL: ${AGENDAMIENTO_AUDIENCIAS_VOCEADOR_API_URL}"
+    echo "   AGENDAMIENTO_AUDIENCIAS_TIMEOUT: ${AGENDAMIENTO_AUDIENCIAS_TIMEOUT}"
     echo "   TZ: ${TZ}"
     echo "   VOCEADOR_URL: ${VOCEADOR_URL}"
     echo "   VOCEADOR_VOZ: ${VOCEADOR_VOZ}"
@@ -99,28 +101,28 @@ Ejecutar el CLI:
 cli --help
 ```
 
-Descargar las audiencias del día:
+Descargar las audiencias de hoy:
 
 ```bash
 cli audiencias descargar
 ```
 
-Se va a crear un archivo `audiencias.json` en el directorio raíz del proyecto con las audiencias descargadas.
+Se va a crear un archivo `audiencias.sqlite3` en el directorio raíz del proyecto.
 
-Mostrar las audiencias descargadas:
+Mostrar las audiencias en la terminal:
 
 ```bash
 cli audiencias mostrar
 ```
 
-Vocear las audiencias de una hora dada:
+Probar vocear las audiencias de hoy en una hora dada:
 
 ```bash
 cli audiencias vocear --hora-inicio 09:00
 ```
 
-Enviar al voceador las audiencias de una hora dada:
+Mantener ejecutando el voceador, al inicio hará la descarga de lo de hoy, por defecto cada 5 minutos revisará las audiencias a vocear y terminará cuando terminen las audiencias de hoy:
 
 ```bash
-cli audiencias enviar-voceador --hora-inicio 09:00
+cli audiencias mantener-ejecutando
 ```
