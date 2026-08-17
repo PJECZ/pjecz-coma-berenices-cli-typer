@@ -271,14 +271,14 @@ def _enviar_mensaje_voceador(mensaje: str, voceador_id: int, console: Console) -
 
 @app.command()
 def mantener_ejecutando(
-    minutos: Annotated[int, Option(help="Intervalo en minutos (1, 5, 10, 15 o 30) entre revisiones")] = 5,
+    minutos: Annotated[int, Option(help="Intervalo en minutos (5, 10, 15 o 30)")] = 5,
 ):
     """Mantener ejecutando el voceo de audiencias"""
     console = Console()
 
     # Validar el intervalo
-    if minutos not in (1, 5, 10, 15, 30):
-        console.print("[red]Error:[/red] El intervalo de minutos debe ser 1, 5, 10, 15 o 30")
+    if minutos not in (5, 10, 15, 30):
+        console.print("[red]Error:[/red] El intervalo de minutos debe ser 5, 10, 15 o 30")
         raise Exit(code=1)
 
     # Descargar las audiencias del día de hoy
