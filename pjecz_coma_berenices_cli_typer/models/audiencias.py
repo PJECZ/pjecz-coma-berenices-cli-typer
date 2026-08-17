@@ -30,11 +30,11 @@ class Audiencia(Base):
     voceos: Mapped[int] = mapped_column(Integer, default=0)
 
     # Reestricciones de la tabla
-    __table_args__ = (
-        UniqueConstraint(
-            "fecha",
-            "hora_inicio",
-            "sala",
-            name="uix_audiencia",
-        ),
-    )
+    # __table_args__ = (
+    #     UniqueConstraint(
+    #         "fecha",
+    #         "hora_inicio",
+    #         "sala",
+    #         name="uix_audiencia",
+    #     ),
+    # )
