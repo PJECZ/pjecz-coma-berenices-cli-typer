@@ -271,17 +271,12 @@ def _enviar_mensaje_voceador(mensaje: str, voceador_id: int, console: Console) -
 
 @app.command()
 def mantener_ejecutando(
-    minutos: Annotated[int, Option(help="Intervalo en minutos (5, 10, 15 o 30) entre revisiones")] = 5,
+    minutos: Annotated[int, Option(help="Intervalo en minutos (5, 10, 15 o 30)")] = 5,
 ):
     """Mantener ejecutando el voceo de audiencias"""
     console = Console()
 
-    # Validar que el intervalo sea positivo
-    if minutos <= 0:
-        console.print("[red]Error:[/red] El intervalo de minutos debe ser mayor a cero")
-        raise Exit(code=1)
-
-    # Validar que el intervalo sea 5, 10, 15 o 30
+    # Validar el intervalo
     if minutos not in (5, 10, 15, 30):
         console.print("[red]Error:[/red] El intervalo de minutos debe ser 5, 10, 15 o 30")
         raise Exit(code=1)
@@ -326,9 +321,7 @@ def mantener_ejecutando(
     hora_actual_truncada = ahora.replace(minute=minuto_truncado , second=0, microsecond=0).time()
 
     # Definir el siguiente incremento
-    siguiente_incremento_minutos = ahora.minute % minutos
-    if siguiente_incremento_minutos == 0:
-        siguiente_incremento_minutos = minutos - (ahora.minute % minutos)
+    siguiente_incremento_minutos = minutos - ahora.minute % minutos
 
     # Si la hora actual es posterior a la máxima, no hay nada que hacer
     if hora_actual_truncada > hora_inicio_maxima:
@@ -399,7 +392,7 @@ def mantener_ejecutando(
         # Dormir hasta la siguiente revisión
         console.print(f"[green]Bloque[/green] [white]{hora_actual_str}[/white], [green]esperando {siguiente_incremento_minutos} minutos...[/green]")
         time.sleep(siguiente_incremento_minutos * 60)
-        siguiente_incremento_minutos = max(siguiente_incremento_minutos, minutos)
+        siguiente_incremento_minutos = minutos
 
 
 def _mostrar(fecha: str, audiencias: list[Audiencia], console: Console):
