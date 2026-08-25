@@ -298,7 +298,7 @@ def mantener_ejecutando(
         audiencias_hoy = (
             session.query(Audiencia)
             .filter_by(fecha=fecha_hoy)
-            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
+            .order_by(Audiencia.hora_inicio, Audiencia.materia, Audiencia.numero_sala)
             .all()
         )
     finally:
@@ -347,47 +347,56 @@ def mantener_ejecutando(
             console.print("[green]Terminó la jornada de audiencias.[/green]")
             break
 
-        # Consultar audiencias de esta hora que aún NO se hayan voceado
+        # Consultar las audiencias
         session = Session()
         try:
-            coincidencias = (
+            audiencias = (
                 session.query(Audiencia)
-                .filter_by(fecha=fecha_hoy, hora_inicio=hora_actual_str)
-                .filter(Audiencia.voceos < 1)
-                .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
+                .filter_by(fecha=fecha_hoy)
+                .filter_by(hora_inicio=hora_actual_str)
+                .order_by(Audiencia.materia, Audiencia.numero_sala)
                 .all()
-            )
+            )  # Ordenado por materia y número de sala
         finally:
             session.close()
 
-        if coincidencias:
+        # Si la consulta entregó audiencias
+        if audiencias:
+            session = Session()  # Para guardar los contadores de voceos
+            voceador_id = 1000  # Inicializar el ID que requiere el servicio de voceo
+
             # Vocear el mensaje inicial
             mensaje_inicial = f"Inicia la jornada de audiencias de las {hora_actual_str}"
             console.print(f"[cyan]Voceando:[/cyan] {mensaje_inicial}")
-            _enviar_mensaje_voceador(mensaje_inicial, 1000, console)
+            _enviar_mensaje_voceador(mensaje_inicial, voceador_id, console)
+            voceador_id += 1
 
-            # Vocear cada audiencia encontrada
-            voceador_id = 1001
-            for audiencia in coincidencias:
-                console.print("[green]Voceando audiencia:[/green]")
-                console.print(f"- [blue]Materia:[/blue] {audiencia.materia}")
-                console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
-                console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
-                console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-                mensaje = f"Para la {audiencia.tipo_audiencia} en materia {audiencia.materia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+            # Vocear las audiencias
+            materia_actual = ""
+            for audiencia in audiencias:
+                if materia_actual == "" or materia_actual != audiencia.materia:
+                    # Vocear la materia
+                    materia_actual = audiencia.materia
+                    mensaje_materia = f"En materia {materia_actual}"
+                    console.print(f"[cyan]Vocear:[/cyan] {mensaje_materia}")
+                    _enviar_mensaje_voceador(mensaje_materia, voceador_id, console)
+                    voceador_id += 1
+
+                # Vocear la audiencia
+                mensaje = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
                 console.print(f"[cyan]Vocear:[/cyan] {mensaje}")
                 _enviar_mensaje_voceador(mensaje, voceador_id, console)
+                voceador_id += 1
 
                 # Incrementar el contador de voceos
-                session_actualizar = Session()
-                try:
-                    audiencia_actualizada = session_actualizar.query(Audiencia).filter_by(id=audiencia.id).first()
-                    if audiencia_actualizada:
-                        audiencia_actualizada.voceos += 1
-                        session_actualizar.commit()
-                finally:
-                    session_actualizar.close()
-                voceador_id += 1
+                audiencia.voceos += 1
+                session.add(audiencia)
+
+            # Guardar los contadores de voceos
+            try:
+                session.commit()
+            finally:
+                session.close()
 
         # Dormir hasta la siguiente revisión
         console.print(f"[green]Bloque[/green] [white]{hora_actual_str}[/white], [green]esperando {siguiente_incremento_minutos} minutos...[/green]")
@@ -462,7 +471,7 @@ def vocear(
         hora_inicio = ahora.replace(minute=minuto, second=0, microsecond=0).strftime("%H:%M")
         console.print(f"[green]Se usará la hora de inicio más cercana hacia atrás:[/green] {hora_inicio}")
 
-    # Consultar la base de datos para obtener las audiencias
+    # Consultar las audiencias
     Base.metadata.create_all(engine)
     session = Session()
     try:
@@ -470,9 +479,9 @@ def vocear(
             session.query(Audiencia)
             .filter_by(fecha=fecha)
             .filter_by(hora_inicio=hora_inicio)
-            .order_by(Audiencia.hora_inicio, Audiencia.numero_sala)
+            .order_by(Audiencia.materia, Audiencia.numero_sala)
             .all()
-        )  # Ordenado por materia, sala
+        )  # Ordenado por materia y número de sala
     finally:
         session.close()
 
@@ -487,29 +496,26 @@ def vocear(
     # Inicializar el ID que requiere el servicio de voceo
     voceador_id = 1000
 
-    # Vocear la hora de inicio de la primera audiencia
+    # Vocear que inicia la jornada
     primera_audiencia = audiencias[0]
     mensaje_inicial = f"Inicia la jornada de audiencias de las {primera_audiencia.hora_inicio}"
-    console.print(f"[cyan]Voceando:[/cyan] {mensaje_inicial}")
+    console.print(f"[cyan]Vocear:[/cyan] {mensaje_inicial}")
     _enviar_mensaje_voceador(mensaje_inicial, voceador_id, console)
-
-    # Incrementar el ID para la siguiente audiencia
     voceador_id += 1
 
     # Vocear las audiencias
     materia_actual = ""
     for audiencia in audiencias:
         if materia_actual == "" or materia_actual != audiencia.materia:
+            # Vocear la materia
             materia_actual = audiencia.materia
+            mensaje_materia = f"En materia {materia_actual}"
+            console.print(f"[cyan]Vocear:[/cyan] {mensaje_materia}")
+            _enviar_mensaje_voceador(mensaje_materia, voceador_id, console)
+            voceador_id += 1
 
-        console.print("[green]Voceando audiencia:[/green]")
-        console.print(f"- [blue]Materia:[/blue] {audiencia.materia}")
-        console.print(f"- [blue]Expediente:[/blue] {audiencia.numero_expediente}")
-        console.print(f"- [blue]Sala:[/blue] {audiencia.sala}")
-        console.print(f"- [blue]Tipo de audiencia:[/blue] {audiencia.tipo_audiencia}")
-        mensaje = f"Para la {audiencia.tipo_audiencia} en materia {audiencia.materia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
+        # Vocear la audiencia
+        mensaje = f"Para la {audiencia.tipo_audiencia} del expediente {audiencia.numero_expediente} pase a la {audiencia.sala}"
         console.print(f"[cyan]Vocear:[/cyan] {mensaje}")
         _enviar_mensaje_voceador(mensaje, voceador_id, console)
-
-        # Incrementar el ID para la siguiente audiencia
         voceador_id += 1
