@@ -1,6 +1,6 @@
 [project]
 name = "pjecz-coma-berenices-cli-typer"
-version = "0.1.0"
+version = "1.2.0"
 description = "Interfaz de Linea de Comandos (CLI) para vocear audiencias"
 readme = "README.md"
 requires-python = ">=3.14"
